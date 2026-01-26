@@ -1,0 +1,44 @@
+## Suspicious Azure AD Login Detection:-
+KQL Query:
+SigninLogs
+| where ResultType != 0
+| summarize FailedLoginCount = count()
+    by UserPrincipalName, IPAddress, bin(TimeGenerated, 1m)
+| where FailedLoginCount > 3
+| sort by FailedLoginCount desc
+
+## Privilege Escalation / Role Assignment Detection
+KQL Query:
+AuditLogs
+| where OperationName contains "Add member to role"
+| extend TargetUser = tostring(TargetResources[0].userPrincipalName)
+| extend AssignedRole = tostring(TargetResources[0].displayName)
+| project TimeGenerated, InitiatedBy, TargetUser, AssignedRole
+| sort by TimeGenerated desc
+
+OR
+
+AuditLogs
+| where OperationName has_any ("Add user", "Update user", "Delete user")
+| extend InitiatedByUPN = tostring(InitiatedBy.user.userPrincipalName)
+| extend TargetUPN = tostring(TargetResources[0].userPrincipalName)
+// Mask Initiator
+| extend MaskedInitiator = strcat(								
+    substring(InitiatedByUPN, 0, 2),
+    "***@",
+    split(InitiatedByUPN, "@")[1]
+)
+// Mask Target
+| extend MaskedTarget = strcat(
+    substring(TargetUPN, 0, 2),
+    "***@",
+    split(TargetUPN, "@")[1]
+)
+| summarize EventCount = count()
+    by OperationName,
+       MaskedInitiator,
+       MaskedTarget,
+       bin(TimeGenerated, 24h)
+
+
+
